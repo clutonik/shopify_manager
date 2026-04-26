@@ -7,6 +7,7 @@ metadata, and executing the product creation mutations.
 
 import json
 import logging
+import os
 from typing import Dict, Any, Optional
 
 import requests
@@ -40,6 +41,40 @@ class ShopifyUploader:
         self.api_version = api_version
         self.dry_run = dry_run
         self.auth = auth
+
+    def get_metafield_id_by_key(self, key: str, namespace: str="custom") -> Optional[str]:
+        """Lookup a metafield global ID by its namespace and key.
+
+        Parameters
+        - namespace: metafield namespace string.
+        - key: metafield key string.
+
+        Returns
+        - str or None: the GraphQL global id for the metafield if found.
+        """
+        url = f"https://{self.shop_base}/admin/api/{self.api_version}/graphql.json"
+        query = """
+        query getMetafields($namespace: String!, $key: String!, $first: Int = 1) {
+          metafields(first: $first, namespace: $namespace, key: $key) {
+            edges {
+              node {
+                id
+              }
+            }
+          }
+        }
+        """
+        variables = {"namespace": namespace, "key": key}
+        response = requests.post(url, json={"query": query, "variables": variables}, headers=self.headers)
+
+        if response.status_code == 200:
+            data = response.json().get("data", {}).get("metafields", {}).get("edges", [])
+            if data:
+                return data[0].get("node", {}).get("id")
+            return None
+        else:
+            logger.error("Error fetching metafield ID: %s", response.text)
+            return None
 
     def get_collection_ids(self):
         """Return a list of collection edge objects from the store.
@@ -173,7 +208,37 @@ class ShopifyUploader:
         """
         title = item.get("title") or ""
         description = item.get("description") or ""
+        # Generate subtitle using OpenAI
+        subtitle = ""
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key and description:
+            try:
+                import openai
+                client = openai.OpenAI(api_key=api_key)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that generates concise product subtitles."},
+                        {"role": "user", "content": f"Generate a subtitle (around 50 characters) for this product description: {description}"}
+                    ],
+                    max_tokens=20  # Aim for short response
+                )
+                subtitle = response.choices[0].message.content.strip()
+                # Truncate to 50 characters if needed
+                if len(subtitle) > 50:
+                    subtitle = subtitle[:47] + "..."
+            except Exception as e:
+                logger.warning("Failed to generate subtitle with OpenAI: %s", e)
+                subtitle = ""
         dims = item.get("dimensions") or []
+        length = width = height = ""
+        if dims:
+            dim_str = dims[0]
+            parts = [p.strip() for p in dim_str.split(' x ')]
+            if len(parts) >= 3:
+                length = parts[0]
+                width = parts[1]
+                height = parts[2]
         dims_str = "; ".join(dims) if dims else ""
         body_html = description
         if dims_str:
@@ -229,6 +294,40 @@ class ShopifyUploader:
 
         if tags:
             input_obj["tags"] = tags
+
+        # Populate MetaFields
+        input_obj["metafields"] = [
+            {
+                "namespace": "custom",
+                "key": "length",
+                "id": self.get_metafield_id_by_key("length"),
+                "value": length
+            },
+            {
+                "namespace": "custom",
+                "key": "width",
+                "id": self.get_metafield_id_by_key("width"),
+                "value": width
+            },
+            {
+                "namespace": "custom",
+                "key": "height",
+                "id": self.get_metafield_id_by_key("height"),
+                "value": height
+            },
+            {
+                "namespace": "custom",
+                "key": "warranty",
+                "id": self.get_metafield_id_by_key("warranty"),
+                "value": "1 year manufacturer's warranty"
+            },
+            {
+                "namespace": "descriptors",
+                "key": "subtitle",
+                "id": self.get_metafield_id_by_key("subtitle", namespace="descriptors"),
+                "value": subtitle
+            }
+        ]
 
         graphql_mutation = """
         mutation productCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
