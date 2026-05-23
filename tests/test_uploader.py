@@ -59,8 +59,8 @@ def test_get_products_pagination(headers):
 
 def test_build_product_payload_includes_collection_and_media(headers):
     up = ShopifyUploader("shop.test", headers, dry_run=True)
-    # patch collection lookup
     up.get_collection_id_by_handle = Mock(return_value="gid://col123")
+    up.get_metafield_id_by_key = Mock(return_value=None)
     item = {"title": "Chair", "description": "Nice", "dimensions": ["10x10"], "images": ["https://img/1.jpg"], "price": "10"}
     body = up.build_product_payload(item, collection="chairs", vendor="V", status="draft")
     assert "query" in body and "variables" in body
