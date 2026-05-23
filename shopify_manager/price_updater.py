@@ -1,7 +1,7 @@
-from shopify_manager import ShopifyUploader as uploader
+from shopify_manager.uploader import API_VERSION
 
 class PriceUpdater:
-    def __init__(self, shop_base: str, headers: dict, auth=None, dry_run=False, api_version=uploader.API_VERSION):
+    def __init__(self, shop_base: str, headers: dict, auth=None, dry_run=False, api_version=API_VERSION):
         self.shop_base = shop_base
         self.headers = headers
         self.auth = auth

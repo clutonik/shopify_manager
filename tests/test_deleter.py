@@ -186,3 +186,26 @@ def test_delete_by_name_no_matches(headers):
         d = ShopifyDeleter("shop.test", headers)
         deleted = d.delete_by_name("nonexistent")
     assert deleted == []
+
+
+def test_fetch_products_no_cursor_when_next_page(headers):
+    # hasNextPage True but edges empty — last_cursor is None, loop should break
+    page = {"data": {"products": {"edges": [], "pageInfo": {"hasNextPage": True}}}}
+    with patch("requests.post", return_value=make_resp(200, page)):
+        d = ShopifyDeleter("shop.test", headers)
+        assert d._fetch_products() == []
+
+
+def test_delete_by_name_skips_failed_delete(headers):
+    nodes = [
+        {"id": "gid://shopify/Product/1", "title": "Dining Table", "status": "ACTIVE"},
+        {"id": "gid://shopify/Product/2", "title": "Dining Chair", "status": "ACTIVE"},
+    ]
+    fetch_resp = make_resp(200, products_page(nodes))
+    delete_ok = {"data": {"productDelete": {"deletedProductId": "x", "userErrors": []}}}
+    delete_err = {"data": {"productDelete": {"deletedProductId": None, "userErrors": [{"field": "id", "message": "fail"}]}}}
+    with patch("requests.post", side_effect=[fetch_resp, make_resp(200, delete_ok), make_resp(200, delete_err)]):
+        d = ShopifyDeleter("shop.test", headers)
+        deleted = d.delete_by_name("dining")
+    assert len(deleted) == 1
+    assert deleted[0]["title"] == "Dining Table"
