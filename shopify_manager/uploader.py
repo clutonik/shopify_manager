@@ -219,11 +219,12 @@ class ShopifyUploader:
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "You are a helpful assistant that generates concise product subtitles."},
-                        {"role": "user", "content": f"Generate a subtitle (around 50 characters) for this product description: {description}"}
+                        {"role": "user", "content": f"Generate a product subtitle (around 20 characters) for this product description: {description}, e.g. 'Green dining fabric chair with wooden legs'."}
                     ],
                     max_tokens=20  # Aim for short response
                 )
                 subtitle = response.choices[0].message.content.strip()
+                subtitle = subtitle.strip('"').strip("'")
                 # Truncate to 50 characters if needed
                 if len(subtitle) > 50:
                     subtitle = subtitle[:47] + "..."
@@ -238,8 +239,8 @@ class ShopifyUploader:
             if len(parts) >= 3:
                 length = parts[0]
                 width = parts[1]
-                height = parts[2]
-        dims_str = "; ".join(dims) if dims else ""
+                height = parts[2].rstrip('H')
+        dims_str = dims[0] if dims else ""
         body_html = description
         if dims_str:
             body_html = (body_html + "<br><br>Dimensions: " + dims_str) if body_html else (
@@ -326,6 +327,12 @@ class ShopifyUploader:
                 "key": "subtitle",
                 "id": self.get_metafield_id_by_key("subtitle", namespace="descriptors"),
                 "value": subtitle
+            },
+            {
+                "namespace": "custom",
+                "key": "dimensions",
+                "id": self.get_metafield_id_by_key("dimensions"),
+                "value": dims_str 
             }
         ]
 
